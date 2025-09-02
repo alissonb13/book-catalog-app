@@ -1,0 +1,73 @@
+﻿version: "3.9"
+
+services:
+  book-catalog-api:
+    image: book-catalog-api
+    build:
+      context: ./book-catalog-backend
+      dockerfile: src/BookCatalog.Api/Dockerfile
+    ports:
+      - "5296:5296"
+    depends_on:
+      - book-catalog-db
+    environment:
+      - ConnectionStrings__BookCatalogConnectionString=Host=book-catalog-db;Database=book_catalog;Username=postgres;Password=postgres
+      - ASPNETCORE_ENVIRONMENT=Development
+    networks:
+      - app-network
+
+  book-catalog-web:
+    build:
+      context: ./book-catalog-frontend
+      dockerfile: Dockerfile
+    ports:
+      - "8080:80"
+    environment:
+      - VITE_API_URL=http://book-catalog-api:5296
+    depends_on:
+      - book-catalog-api
+    networks:
+      - app-network
+
+  book-catalog-migration:
+    image: mcr.microsoft.com/dotnet/sdk:9.0
+    working_dir: /src
+    volumes:
+      - ./book-catalog-backend/src:/src
+    depends_on:
+      book-catalog-db:
+        condition: service_healthy
+    environment:
+      - ConnectionStrings__BookCatalogConnectionString=Host=book-catalog-db;Database=book_catalog;Username=postgres;Password=postgres
+    command: >
+      sh -c "dotnet tool install --global dotnet-ef &&
+             export PATH=\"$PATH:/root/.dotnet/tools\" &&
+             dotnet ef database update --project BookCatalog.Infrastructure/BookCatalog.Infrastructure.csproj --startup-project BookCatalog.Api/BookCatalog.Api.csproj"
+    networks:
+      - app-network
+
+  book-catalog-db:
+    image: postgres:16
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: book_catalog
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d book_catalog"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-network
+
+volumes:
+  postgres-data:
+
+networks:
+  app-network:
+    driver: bridge
